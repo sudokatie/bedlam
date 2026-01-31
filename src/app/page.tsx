@@ -4,9 +4,10 @@ import { useEffect, useRef, useState } from 'react';
 import { GameState, GridPosition, RoomType, StaffType } from '../game/types';
 import { createInitialState } from '../game/state';
 import { screenToGrid, isInBounds, getTileCorners, gridToScreen } from '../game/isometric';
-import { CANVAS_WIDTH, CANVAS_HEIGHT, GRID_SIZE, COLORS, ROOM_DEFS, STAFF_DEFS } from '../game/constants';
+import { CANVAS_WIDTH, CANVAS_HEIGHT, GRID_SIZE, COLORS, ROOM_DEFS, STAFF_DEFS, DISEASES } from '../game/constants';
 import { canPlaceRoom, placeRoom, getRoomTiles, getRoomAtPosition } from '../game/rooms';
 import { hireStaff, assignStaffToRoom, updateStaffMovement, canHireStaff } from '../game/staff';
+import { updatePatients, checkPatientSpawn } from '../game/patients';
 
 export default function Home() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -134,6 +135,40 @@ export default function Home() {
       ctx.fillText(staff.type[0].toUpperCase(), screenPos.x, screenPos.y + 12);
     }
 
+    // Draw patients
+    for (const patient of gameState.patients) {
+      const screenPos = gridToScreen(patient.position);
+      
+      // Color based on state
+      let color = COLORS.patient;
+      if (patient.state === 'cured') color = COLORS.patientCured;
+      else if (patient.patience < 30) color = COLORS.patientSick;
+      
+      // Draw patient as circle (smaller than staff)
+      ctx.beginPath();
+      ctx.arc(screenPos.x, screenPos.y + 8, 8, 0, Math.PI * 2);
+      ctx.fillStyle = color;
+      ctx.fill();
+      ctx.strokeStyle = '#000';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+
+      // Draw disease initial
+      const disease = DISEASES[patient.disease];
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 8px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText(disease.name[0], screenPos.x, screenPos.y + 11);
+      
+      // Draw patience bar above patient
+      const barWidth = 16;
+      const barHeight = 3;
+      ctx.fillStyle = '#333';
+      ctx.fillRect(screenPos.x - barWidth/2, screenPos.y - 8, barWidth, barHeight);
+      ctx.fillStyle = patient.patience > 50 ? '#4a7' : patient.patience > 25 ? '#d94' : '#d44';
+      ctx.fillRect(screenPos.x - barWidth/2, screenPos.y - 8, barWidth * (patient.patience / 100), barHeight);
+    }
+
     // Draw HUD
     ctx.textAlign = 'left';
     ctx.fillStyle = '#ffffff';
@@ -141,7 +176,7 @@ export default function Home() {
     ctx.fillText(`Cash: $${gameState.cash.toLocaleString()}`, 20, 30);
     ctx.fillText(`Reputation: ${gameState.reputation}`, 20, 50);
     ctx.fillText(`Cured: ${gameState.patientsCured}`, 20, 70);
-    ctx.fillText(`Rooms: ${gameState.rooms.length} | Staff: ${gameState.staff.length}`, 20, 90);
+    ctx.fillText(`Rooms: ${gameState.rooms.length} | Staff: ${gameState.staff.length} | Patients: ${gameState.patients.length}`, 20, 90);
     
     if (gameState.buildingType) {
       const def = ROOM_DEFS[gameState.buildingType];
@@ -255,6 +290,22 @@ export default function Home() {
     const interval = setInterval(() => {
       setGameState(prev => updateStaffMovement(prev));
     }, 200); // Move every 200ms
+
+    return () => clearInterval(interval);
+  }, [gameState.paused]);
+
+  // Game tick for patients
+  useEffect(() => {
+    if (gameState.paused) return;
+
+    const interval = setInterval(() => {
+      setGameState(prev => {
+        const newState = { ...prev };
+        checkPatientSpawn(newState, Date.now());
+        updatePatients(newState);
+        return newState;
+      });
+    }, 200); // Update patients every 200ms
 
     return () => clearInterval(interval);
   }, [gameState.paused]);

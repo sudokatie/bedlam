@@ -1,16 +1,18 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { GameState, GridPosition, RoomType } from '../game/types';
+import { GameState, GridPosition, RoomType, StaffType } from '../game/types';
 import { createInitialState } from '../game/state';
 import { screenToGrid, isInBounds, getTileCorners, gridToScreen } from '../game/isometric';
-import { CANVAS_WIDTH, CANVAS_HEIGHT, GRID_SIZE, COLORS, ROOM_DEFS } from '../game/constants';
-import { canPlaceRoom, placeRoom, getRoomTiles } from '../game/rooms';
+import { CANVAS_WIDTH, CANVAS_HEIGHT, GRID_SIZE, COLORS, ROOM_DEFS, STAFF_DEFS } from '../game/constants';
+import { canPlaceRoom, placeRoom, getRoomTiles, getRoomAtPosition } from '../game/rooms';
+import { hireStaff, assignStaffToRoom, updateStaffMovement, canHireStaff } from '../game/staff';
 
 export default function Home() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [gameState, setGameState] = useState<GameState>(createInitialState);
   const [hoveredTile, setHoveredTile] = useState<GridPosition | null>(null);
+  const [selectedStaffId, setSelectedStaffId] = useState<string | null>(null);
 
   // Render the game
   useEffect(() => {
@@ -111,6 +113,27 @@ export default function Home() {
       }
     }
 
+    // Draw staff
+    for (const staff of gameState.staff) {
+      const screenPos = gridToScreen(staff.position);
+      const def = STAFF_DEFS[staff.type];
+      
+      // Draw staff as circle
+      ctx.beginPath();
+      ctx.arc(screenPos.x, screenPos.y + 8, 10, 0, Math.PI * 2);
+      ctx.fillStyle = selectedStaffId === staff.id ? '#ffff00' : def.color;
+      ctx.fill();
+      ctx.strokeStyle = '#000';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      // Draw staff initial
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 10px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText(staff.type[0].toUpperCase(), screenPos.x, screenPos.y + 12);
+    }
+
     // Draw HUD
     ctx.textAlign = 'left';
     ctx.fillStyle = '#ffffff';
@@ -118,12 +141,18 @@ export default function Home() {
     ctx.fillText(`Cash: $${gameState.cash.toLocaleString()}`, 20, 30);
     ctx.fillText(`Reputation: ${gameState.reputation}`, 20, 50);
     ctx.fillText(`Cured: ${gameState.patientsCured}`, 20, 70);
-    ctx.fillText(`Rooms: ${gameState.rooms.length}`, 20, 90);
+    ctx.fillText(`Rooms: ${gameState.rooms.length} | Staff: ${gameState.staff.length}`, 20, 90);
     
     if (gameState.buildingType) {
       const def = ROOM_DEFS[gameState.buildingType];
       ctx.fillStyle = '#ffff00';
       ctx.fillText(`Building: ${def.name} ($${def.cost})`, 20, 120);
+      ctx.fillText(`Press ESC to cancel`, 20, 140);
+    }
+
+    if (selectedStaffId) {
+      ctx.fillStyle = '#00ffff';
+      ctx.fillText(`Staff selected - click a room to assign`, 20, 120);
       ctx.fillText(`Press ESC to cancel`, 20, 140);
     }
     
@@ -132,7 +161,7 @@ export default function Home() {
       ctx.fillText(`Tile: (${hoveredTile.x}, ${hoveredTile.y})`, 20, CANVAS_HEIGHT - 20);
     }
 
-  }, [gameState, hoveredTile]);
+  }, [gameState, hoveredTile, selectedStaffId]);
 
   // Handle mouse move
   const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -171,6 +200,33 @@ export default function Home() {
       }
       return;
     }
+
+    // Staff assignment mode: assign selected staff to clicked room
+    if (selectedStaffId) {
+      const room = getRoomAtPosition(gameState.rooms, hoveredTile);
+      if (room) {
+        const newState = assignStaffToRoom(gameState, selectedStaffId, room.id);
+        if (newState) {
+          setGameState(newState);
+          setSelectedStaffId(null);
+          console.log(`Assigned staff to ${room.type}`);
+        } else {
+          console.log('Cannot assign staff to this room');
+        }
+      } else {
+        console.log('No room at this position');
+      }
+      return;
+    }
+
+    // Check if clicked on a staff member
+    for (const staff of gameState.staff) {
+      if (staff.position.x === hoveredTile.x && staff.position.y === hoveredTile.y) {
+        setSelectedStaffId(staff.id);
+        console.log(`Selected staff: ${staff.name}`);
+        return;
+      }
+    }
     
     console.log(`Clicked tile: (${hoveredTile.x}, ${hoveredTile.y})`);
   };
@@ -184,6 +240,7 @@ export default function Home() {
           buildingType: null,
           selectedTool: 'select',
         }));
+        setSelectedStaffId(null);
       }
     };
 
@@ -191,8 +248,20 @@ export default function Home() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
+  // Game tick for staff movement
+  useEffect(() => {
+    if (gameState.paused) return;
+
+    const interval = setInterval(() => {
+      setGameState(prev => updateStaffMovement(prev));
+    }, 200); // Move every 200ms
+
+    return () => clearInterval(interval);
+  }, [gameState.paused]);
+
   // Start building a room
   const startBuilding = (type: RoomType) => {
+    setSelectedStaffId(null);
     setGameState(prev => ({
       ...prev,
       buildingType: type,
@@ -200,15 +269,27 @@ export default function Home() {
     }));
   };
 
+  // Hire a staff member
+  const handleHireStaff = (type: StaffType) => {
+    const newState = hireStaff(gameState, type);
+    if (newState) {
+      setGameState(newState);
+      console.log(`Hired ${type}`);
+    } else {
+      console.log(`Cannot afford ${type}`);
+    }
+  };
+
   return (
     <main className="min-h-screen bg-gray-900 flex flex-col items-center justify-center p-4">
       <h1 className="text-3xl font-bold text-white mb-4">Bedlam</h1>
       <p className="text-gray-400 mb-4">Theme Hospital style hospital management</p>
       
-      <div className="flex gap-4 mb-4">
+      <div className="flex gap-4 mb-2">
+        <span className="text-gray-400 self-center">Rooms:</span>
         <button
           onClick={() => startBuilding('reception')}
-          className={`px-4 py-2 rounded ${
+          className={`px-3 py-1 rounded text-sm ${
             gameState.buildingType === 'reception' 
               ? 'bg-yellow-600 text-white' 
               : 'bg-gray-700 text-gray-200 hover:bg-gray-600'
@@ -218,7 +299,7 @@ export default function Home() {
         </button>
         <button
           onClick={() => startBuilding('gp_office')}
-          className={`px-4 py-2 rounded ${
+          className={`px-3 py-1 rounded text-sm ${
             gameState.buildingType === 'gp_office' 
               ? 'bg-yellow-600 text-white' 
               : 'bg-gray-700 text-gray-200 hover:bg-gray-600'
@@ -228,7 +309,7 @@ export default function Home() {
         </button>
         <button
           onClick={() => startBuilding('pharmacy')}
-          className={`px-4 py-2 rounded ${
+          className={`px-3 py-1 rounded text-sm ${
             gameState.buildingType === 'pharmacy' 
               ? 'bg-yellow-600 text-white' 
               : 'bg-gray-700 text-gray-200 hover:bg-gray-600'
@@ -238,13 +319,50 @@ export default function Home() {
         </button>
         <button
           onClick={() => startBuilding('deflation')}
-          className={`px-4 py-2 rounded ${
+          className={`px-3 py-1 rounded text-sm ${
             gameState.buildingType === 'deflation' 
               ? 'bg-yellow-600 text-white' 
               : 'bg-gray-700 text-gray-200 hover:bg-gray-600'
           }`}
         >
           Deflation ($2000)
+        </button>
+      </div>
+
+      <div className="flex gap-4 mb-4">
+        <span className="text-gray-400 self-center">Staff:</span>
+        <button
+          onClick={() => handleHireStaff('receptionist')}
+          disabled={!canHireStaff(gameState, 'receptionist')}
+          className={`px-3 py-1 rounded text-sm ${
+            canHireStaff(gameState, 'receptionist')
+              ? 'bg-purple-700 text-gray-200 hover:bg-purple-600'
+              : 'bg-gray-800 text-gray-500 cursor-not-allowed'
+          }`}
+        >
+          Receptionist ($200)
+        </button>
+        <button
+          onClick={() => handleHireStaff('doctor')}
+          disabled={!canHireStaff(gameState, 'doctor')}
+          className={`px-3 py-1 rounded text-sm ${
+            canHireStaff(gameState, 'doctor')
+              ? 'bg-blue-700 text-gray-200 hover:bg-blue-600'
+              : 'bg-gray-800 text-gray-500 cursor-not-allowed'
+          }`}
+        >
+          Doctor ($500)
+        </button>
+        <button
+          onClick={() => handleHireStaff('nurse')}
+          disabled={!canHireStaff(gameState, 'nurse')}
+          className={`px-3 py-1 rounded text-sm ${
+            canHireStaff(gameState, 'nurse')
+              ? 'bg-pink-700 text-gray-200 hover:bg-pink-600'
+              : 'bg-gray-800 text-gray-500 cursor-not-allowed'
+          }`}
+        >
+          Nurse ($300)
         </button>
       </div>
 

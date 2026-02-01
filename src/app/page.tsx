@@ -1,433 +1,202 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { GameState, GridPosition, RoomType, StaffType } from '../game/types';
 import { createInitialState } from '../game/state';
-import { screenToGrid, isInBounds, getTileCorners, gridToScreen } from '../game/isometric';
-import { CANVAS_WIDTH, CANVAS_HEIGHT, GRID_SIZE, COLORS, ROOM_DEFS, STAFF_DEFS, DISEASES } from '../game/constants';
-import { canPlaceRoom, placeRoom, getRoomTiles, getRoomAtPosition } from '../game/rooms';
-import { hireStaff, assignStaffToRoom, updateStaffMovement, canHireStaff } from '../game/staff';
-import { updatePatients, checkPatientSpawn } from '../game/patients';
+import { createGameLoop } from '../game/loop';
+import { handleKeyDown, handleRightClick } from '../game/input';
+import { hireStaff } from '../game/staff';
+import { placeRoom, getRoomAtPosition } from '../game/rooms';
+import { assignStaffToRoom } from '../game/staff';
+import GameCanvas from '../components/GameCanvas';
+import HUD from '../components/HUD';
+import Toolbar from '../components/Toolbar';
+import InfoPanel from '../components/InfoPanel';
+import Notifications from '../components/Notifications';
 
 export default function Home() {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
   const [gameState, setGameState] = useState<GameState>(createInitialState);
   const [hoveredTile, setHoveredTile] = useState<GridPosition | null>(null);
   const [selectedStaffId, setSelectedStaffId] = useState<string | null>(null);
+  const gameStateRef = useRef<GameState>(gameState);
+  const gameLoopRef = useRef<ReturnType<typeof createGameLoop> | null>(null);
 
-  // Render the game
+  // Keep ref in sync with state
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
+    gameStateRef.current = gameState;
+  }, [gameState]);
 
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    // Clear canvas
-    ctx.fillStyle = '#1a1a2e';
-    ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
-
-    // Draw grid
-    for (let y = 0; y < GRID_SIZE; y++) {
-      for (let x = 0; x < GRID_SIZE; x++) {
-        const corners = getTileCorners({ x, y });
-        
-        ctx.beginPath();
-        ctx.moveTo(corners[0].x, corners[0].y);
-        ctx.lineTo(corners[1].x, corners[1].y);
-        ctx.lineTo(corners[2].x, corners[2].y);
-        ctx.lineTo(corners[3].x, corners[3].y);
-        ctx.closePath();
-        
-        // Highlight hovered tile (only if not in build mode)
-        if (!gameState.buildingType && hoveredTile && hoveredTile.x === x && hoveredTile.y === y) {
-          ctx.fillStyle = COLORS.highlight;
-        } else {
-          ctx.fillStyle = COLORS.grass;
-        }
-        ctx.fill();
-        
-        ctx.strokeStyle = COLORS.gridLine;
-        ctx.lineWidth = 1;
-        ctx.stroke();
-      }
-    }
-
-    // Draw placed rooms
-    for (const room of gameState.rooms) {
-      const def = ROOM_DEFS[room.type];
-      
-      // Draw each tile of the room
-      for (let dx = 0; dx < room.width; dx++) {
-        for (let dy = 0; dy < room.height; dy++) {
-          const tilePos = { x: room.position.x + dx, y: room.position.y + dy };
-          const corners = getTileCorners(tilePos);
-          
-          ctx.beginPath();
-          ctx.moveTo(corners[0].x, corners[0].y);
-          ctx.lineTo(corners[1].x, corners[1].y);
-          ctx.lineTo(corners[2].x, corners[2].y);
-          ctx.lineTo(corners[3].x, corners[3].y);
-          ctx.closePath();
-          
-          ctx.fillStyle = def.color;
-          ctx.fill();
-          ctx.strokeStyle = '#333';
-          ctx.lineWidth = 2;
-          ctx.stroke();
-        }
-      }
-
-      // Draw room label at center
-      const centerX = room.position.x + room.width / 2 - 0.5;
-      const centerY = room.position.y + room.height / 2 - 0.5;
-      const screenPos = gridToScreen({ x: centerX, y: centerY });
-      
-      ctx.fillStyle = '#ffffff';
-      ctx.font = 'bold 12px monospace';
-      ctx.textAlign = 'center';
-      ctx.fillText(def.name, screenPos.x, screenPos.y + 5);
-    }
-
-    // Draw room ghost in build mode
-    if (gameState.buildingType && hoveredTile) {
-      const canPlace = canPlaceRoom(gameState, gameState.buildingType, hoveredTile);
-      const tiles = getRoomTiles(gameState.buildingType, hoveredTile);
-      
-      for (const tile of tiles) {
-        if (!isInBounds(tile)) continue;
-        
-        const corners = getTileCorners(tile);
-        
-        ctx.beginPath();
-        ctx.moveTo(corners[0].x, corners[0].y);
-        ctx.lineTo(corners[1].x, corners[1].y);
-        ctx.lineTo(corners[2].x, corners[2].y);
-        ctx.lineTo(corners[3].x, corners[3].y);
-        ctx.closePath();
-        
-        ctx.fillStyle = canPlace ? COLORS.validPlacement : COLORS.invalidPlacement;
-        ctx.fill();
-        ctx.strokeStyle = canPlace ? '#0f0' : '#f00';
-        ctx.lineWidth = 2;
-        ctx.stroke();
-      }
-    }
-
-    // Draw staff
-    for (const staff of gameState.staff) {
-      const screenPos = gridToScreen(staff.position);
-      const def = STAFF_DEFS[staff.type];
-      
-      // Draw staff as circle
-      ctx.beginPath();
-      ctx.arc(screenPos.x, screenPos.y + 8, 10, 0, Math.PI * 2);
-      ctx.fillStyle = selectedStaffId === staff.id ? '#ffff00' : def.color;
-      ctx.fill();
-      ctx.strokeStyle = '#000';
-      ctx.lineWidth = 2;
-      ctx.stroke();
-
-      // Draw staff initial
-      ctx.fillStyle = '#ffffff';
-      ctx.font = 'bold 10px monospace';
-      ctx.textAlign = 'center';
-      ctx.fillText(staff.type[0].toUpperCase(), screenPos.x, screenPos.y + 12);
-    }
-
-    // Draw patients
-    for (const patient of gameState.patients) {
-      const screenPos = gridToScreen(patient.position);
-      
-      // Color based on state
-      let color = COLORS.patient;
-      if (patient.state === 'cured') color = COLORS.patientCured;
-      else if (patient.patience < 30) color = COLORS.patientSick;
-      
-      // Draw patient as circle (smaller than staff)
-      ctx.beginPath();
-      ctx.arc(screenPos.x, screenPos.y + 8, 8, 0, Math.PI * 2);
-      ctx.fillStyle = color;
-      ctx.fill();
-      ctx.strokeStyle = '#000';
-      ctx.lineWidth = 1;
-      ctx.stroke();
-
-      // Draw disease initial
-      const disease = DISEASES[patient.disease];
-      ctx.fillStyle = '#ffffff';
-      ctx.font = 'bold 8px monospace';
-      ctx.textAlign = 'center';
-      ctx.fillText(disease.name[0], screenPos.x, screenPos.y + 11);
-      
-      // Draw patience bar above patient
-      const barWidth = 16;
-      const barHeight = 3;
-      ctx.fillStyle = '#333';
-      ctx.fillRect(screenPos.x - barWidth/2, screenPos.y - 8, barWidth, barHeight);
-      ctx.fillStyle = patient.patience > 50 ? '#4a7' : patient.patience > 25 ? '#d94' : '#d44';
-      ctx.fillRect(screenPos.x - barWidth/2, screenPos.y - 8, barWidth * (patient.patience / 100), barHeight);
-    }
-
-    // Draw HUD
-    ctx.textAlign = 'left';
-    ctx.fillStyle = '#ffffff';
-    ctx.font = '16px monospace';
-    ctx.fillText(`Cash: $${gameState.cash.toLocaleString()}`, 20, 30);
-    ctx.fillText(`Reputation: ${gameState.reputation}`, 20, 50);
-    ctx.fillText(`Cured: ${gameState.patientsCured}`, 20, 70);
-    ctx.fillText(`Rooms: ${gameState.rooms.length} | Staff: ${gameState.staff.length} | Patients: ${gameState.patients.length}`, 20, 90);
+  // Initialize game loop once
+  useEffect(() => {
+    gameLoopRef.current = createGameLoop(
+      () => gameStateRef.current,
+      setGameState,
+      () => {}
+    );
+    gameLoopRef.current.start();
     
-    if (gameState.buildingType) {
-      const def = ROOM_DEFS[gameState.buildingType];
-      ctx.fillStyle = '#ffff00';
-      ctx.fillText(`Building: ${def.name} ($${def.cost})`, 20, 120);
-      ctx.fillText(`Press ESC to cancel`, 20, 140);
-    }
-
-    if (selectedStaffId) {
-      ctx.fillStyle = '#00ffff';
-      ctx.fillText(`Staff selected - click a room to assign`, 20, 120);
-      ctx.fillText(`Press ESC to cancel`, 20, 140);
-    }
-    
-    if (hoveredTile) {
-      ctx.fillStyle = '#888888';
-      ctx.fillText(`Tile: (${hoveredTile.x}, ${hoveredTile.y})`, 20, CANVAS_HEIGHT - 20);
-    }
-
-  }, [gameState, hoveredTile, selectedStaffId]);
-
-  // Handle mouse move
-  const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
-    const rect = canvas.getBoundingClientRect();
-    const screenPos = {
-      x: e.clientX - rect.left,
-      y: e.clientY - rect.top,
+    return () => {
+      gameLoopRef.current?.stop();
     };
-    
-    const gridPos = screenToGrid(screenPos);
-    if (isInBounds(gridPos)) {
-      setHoveredTile(gridPos);
-    } else {
-      setHoveredTile(null);
-    }
-  };
+  }, []);
 
-  // Handle click
-  const handleClick = () => {
-    if (!hoveredTile) return;
-    
-    // Build mode: place room
-    if (gameState.buildingType) {
-      const newState = placeRoom(gameState, gameState.buildingType, hoveredTile);
-      if (newState) {
-        setGameState({
-          ...newState,
-          buildingType: null, // Exit build mode after placing
-        });
-        console.log(`Placed ${gameState.buildingType} at (${hoveredTile.x}, ${hoveredTile.y})`);
-      } else {
-        console.log('Cannot place room here');
+  // Handle keyboard input
+  useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === ' ') e.preventDefault();
+      setGameState(prev => handleKeyDown(prev, e.key));
+      if (e.key === 'Escape') setSelectedStaffId(null);
+    };
+
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, []);
+
+  const handleCanvasClick = useCallback((gridPos: GridPosition) => {
+    setGameState(prev => {
+      // Build mode
+      if (prev.buildingType) {
+        const newState = placeRoom(prev, prev.buildingType, gridPos);
+        if (newState) {
+          return {
+            ...newState,
+            buildingType: null,
+            selectedTool: 'select',
+          };
+        }
+        return prev;
       }
-      return;
-    }
+      return prev;
+    });
 
-    // Staff assignment mode: assign selected staff to clicked room
+    // Staff assignment mode (needs current state)
     if (selectedStaffId) {
-      const room = getRoomAtPosition(gameState.rooms, hoveredTile);
+      const room = getRoomAtPosition(gameState.rooms, gridPos);
       if (room) {
         const newState = assignStaffToRoom(gameState, selectedStaffId, room.id);
         if (newState) {
           setGameState(newState);
           setSelectedStaffId(null);
-          console.log(`Assigned staff to ${room.type}`);
-        } else {
-          console.log('Cannot assign staff to this room');
         }
-      } else {
-        console.log('No room at this position');
       }
       return;
     }
 
     // Check if clicked on a staff member
     for (const staff of gameState.staff) {
-      if (staff.position.x === hoveredTile.x && staff.position.y === hoveredTile.y) {
+      if (staff.position.x === gridPos.x && staff.position.y === gridPos.y) {
         setSelectedStaffId(staff.id);
-        console.log(`Selected staff: ${staff.name}`);
         return;
       }
     }
-    
-    console.log(`Clicked tile: (${hoveredTile.x}, ${hoveredTile.y})`);
-  };
+  }, [gameState, selectedStaffId]);
 
-  // Handle keyboard
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        setGameState(prev => ({
-          ...prev,
-          buildingType: null,
-          selectedTool: 'select',
-        }));
-        setSelectedStaffId(null);
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+  const handleCanvasRightClick = useCallback(() => {
+    setGameState(prev => handleRightClick(prev));
+    setSelectedStaffId(null);
   }, []);
 
-  // Game tick for staff movement
-  useEffect(() => {
-    if (gameState.paused) return;
-
-    const interval = setInterval(() => {
-      setGameState(prev => updateStaffMovement(prev));
-    }, 200); // Move every 200ms
-
-    return () => clearInterval(interval);
-  }, [gameState.paused]);
-
-  // Game tick for patients
-  useEffect(() => {
-    if (gameState.paused) return;
-
-    const interval = setInterval(() => {
-      setGameState(prev => {
-        const newState = { ...prev };
-        checkPatientSpawn(newState, Date.now());
-        updatePatients(newState);
-        return newState;
-      });
-    }, 200); // Update patients every 200ms
-
-    return () => clearInterval(interval);
-  }, [gameState.paused]);
-
-  // Start building a room
-  const startBuilding = (type: RoomType) => {
+  const handleBuildSelect = useCallback((type: RoomType) => {
     setSelectedStaffId(null);
     setGameState(prev => ({
       ...prev,
       buildingType: type,
       selectedTool: 'build',
     }));
-  };
+  }, []);
 
-  // Hire a staff member
-  const handleHireStaff = (type: StaffType) => {
-    const newState = hireStaff(gameState, type);
-    if (newState) {
-      setGameState(newState);
-      console.log(`Hired ${type}`);
-    } else {
-      console.log(`Cannot afford ${type}`);
-    }
-  };
+  const handleHireClick = useCallback((type: StaffType) => {
+    setGameState(prev => {
+      const newState = hireStaff(prev, type);
+      return newState || prev;
+    });
+  }, []);
+
+  const handleSpeedChange = useCallback((speed: 1 | 2 | 3) => {
+    setGameState(prev => ({ ...prev, gameSpeed: speed }));
+  }, []);
+
+  const handlePauseToggle = useCallback(() => {
+    setGameState(prev => ({ ...prev, paused: !prev.paused }));
+  }, []);
+
+  const handleDismissNotification = useCallback((id: string) => {
+    setGameState(prev => ({
+      ...prev,
+      notifications: prev.notifications.filter(n => n.id !== id),
+    }));
+  }, []);
 
   return (
     <main className="min-h-screen bg-gray-900 flex flex-col items-center justify-center p-4">
-      <h1 className="text-3xl font-bold text-white mb-4">Bedlam</h1>
-      <p className="text-gray-400 mb-4">Theme Hospital style hospital management</p>
+      <h1 className="text-3xl font-bold text-white mb-2">Bedlam</h1>
       
-      <div className="flex gap-4 mb-2">
-        <span className="text-gray-400 self-center">Rooms:</span>
-        <button
-          onClick={() => startBuilding('reception')}
-          className={`px-3 py-1 rounded text-sm ${
-            gameState.buildingType === 'reception' 
-              ? 'bg-yellow-600 text-white' 
-              : 'bg-gray-700 text-gray-200 hover:bg-gray-600'
-          }`}
-        >
-          Reception ($500)
-        </button>
-        <button
-          onClick={() => startBuilding('gp_office')}
-          className={`px-3 py-1 rounded text-sm ${
-            gameState.buildingType === 'gp_office' 
-              ? 'bg-yellow-600 text-white' 
-              : 'bg-gray-700 text-gray-200 hover:bg-gray-600'
-          }`}
-        >
-          GP Office ($1000)
-        </button>
-        <button
-          onClick={() => startBuilding('pharmacy')}
-          className={`px-3 py-1 rounded text-sm ${
-            gameState.buildingType === 'pharmacy' 
-              ? 'bg-yellow-600 text-white' 
-              : 'bg-gray-700 text-gray-200 hover:bg-gray-600'
-          }`}
-        >
-          Pharmacy ($1500)
-        </button>
-        <button
-          onClick={() => startBuilding('deflation')}
-          className={`px-3 py-1 rounded text-sm ${
-            gameState.buildingType === 'deflation' 
-              ? 'bg-yellow-600 text-white' 
-              : 'bg-gray-700 text-gray-200 hover:bg-gray-600'
-          }`}
-        >
-          Deflation ($2000)
-        </button>
-      </div>
-
-      <div className="flex gap-4 mb-4">
-        <span className="text-gray-400 self-center">Staff:</span>
-        <button
-          onClick={() => handleHireStaff('receptionist')}
-          disabled={!canHireStaff(gameState, 'receptionist')}
-          className={`px-3 py-1 rounded text-sm ${
-            canHireStaff(gameState, 'receptionist')
-              ? 'bg-purple-700 text-gray-200 hover:bg-purple-600'
-              : 'bg-gray-800 text-gray-500 cursor-not-allowed'
-          }`}
-        >
-          Receptionist ($200)
-        </button>
-        <button
-          onClick={() => handleHireStaff('doctor')}
-          disabled={!canHireStaff(gameState, 'doctor')}
-          className={`px-3 py-1 rounded text-sm ${
-            canHireStaff(gameState, 'doctor')
-              ? 'bg-blue-700 text-gray-200 hover:bg-blue-600'
-              : 'bg-gray-800 text-gray-500 cursor-not-allowed'
-          }`}
-        >
-          Doctor ($500)
-        </button>
-        <button
-          onClick={() => handleHireStaff('nurse')}
-          disabled={!canHireStaff(gameState, 'nurse')}
-          className={`px-3 py-1 rounded text-sm ${
-            canHireStaff(gameState, 'nurse')
-              ? 'bg-pink-700 text-gray-200 hover:bg-pink-600'
-              : 'bg-gray-800 text-gray-500 cursor-not-allowed'
-          }`}
-        >
-          Nurse ($300)
-        </button>
-      </div>
-
-      <canvas
-        ref={canvasRef}
-        width={CANVAS_WIDTH}
-        height={CANVAS_HEIGHT}
-        className="border border-gray-700 cursor-crosshair"
-        onMouseMove={handleMouseMove}
-        onClick={handleClick}
+      <HUD
+        cash={gameState.cash}
+        reputation={gameState.reputation}
+        tick={gameState.tick}
+        gameSpeed={gameState.gameSpeed}
+        paused={gameState.paused}
+        patientsCured={gameState.patientsCured}
+        onSpeedChange={handleSpeedChange}
+        onPauseToggle={handlePauseToggle}
       />
-      <div className="mt-4 text-gray-400 text-sm">
-        Click a build button, then click on the grid to place. Press ESC to cancel.
+      
+      <Toolbar
+        state={gameState}
+        onBuildSelect={handleBuildSelect}
+        onHireClick={handleHireClick}
+        onSelectTool={() => setGameState(prev => ({ ...prev, selectedTool: 'select', buildingType: null }))}
+      />
+      
+      <div className="flex gap-4">
+        <GameCanvas
+          state={gameState}
+          hoveredTile={hoveredTile}
+          selectedId={selectedStaffId}
+          onHoverChange={setHoveredTile}
+          onClick={handleCanvasClick}
+          onRightClick={handleCanvasRightClick}
+        />
+        
+        <InfoPanel
+          state={gameState}
+          selectedId={selectedStaffId}
+        />
       </div>
+      
+      <div className="mt-2 text-gray-500 text-sm">
+        {gameState.buildingType && 'Click to place room. '}
+        {selectedStaffId && 'Click a room to assign staff. '}
+        {hoveredTile && `(${hoveredTile.x}, ${hoveredTile.y})`}
+        {' | ESC to cancel | Space to pause | 1-4 for rooms'}
+      </div>
+      
+      <Notifications
+        notifications={gameState.notifications}
+        onDismiss={handleDismissNotification}
+      />
+      
+      {gameState.gameOver && (
+        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50">
+          <div className="bg-gray-800 p-8 rounded-lg text-center">
+            <h2 className="text-3xl font-bold text-white mb-4">
+              {gameState.won ? 'Victory!' : 'Game Over'}
+            </h2>
+            <p className="text-gray-300 mb-4">
+              {gameState.won 
+                ? `You cured ${gameState.patientsCured} patients!`
+                : 'Your hospital went bankrupt.'}
+            </p>
+            <button
+              onClick={() => setGameState(createInitialState())}
+              className="px-6 py-2 bg-blue-600 text-white rounded hover:bg-blue-500"
+            >
+              Play Again
+            </button>
+          </div>
+        </div>
+      )}
     </main>
   );
 }

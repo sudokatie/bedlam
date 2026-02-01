@@ -46,8 +46,8 @@ export interface Staff {
   id: string;
   type: StaffType;
   name: string;
-  skill: number;        // 0-100
-  stamina: number;      // 0-100
+  skill: number;
+  stamina: number;
   salary: number;
   assignedRoomId: string | null;
   state: 'idle' | 'walking' | 'working' | 'resting';
@@ -68,13 +68,22 @@ export interface Disease {
   difficulty: number;
 }
 
-export type PatientState = 'arriving' | 'waiting' | 'in_gp' | 'in_treatment' | 'leaving' | 'cured' | 'dead';
+export type PatientState = 
+  | 'arriving' 
+  | 'waiting' 
+  | 'in_gp' 
+  | 'in_diagnosis' 
+  | 'in_treatment' 
+  | 'leaving' 
+  | 'cured' 
+  | 'dead';
 
 export interface Patient {
   id: string;
   disease: DiseaseType;
   diagnosed: boolean;
   diagnosisProgress: number;
+  diagnosisChainIndex: number;
   state: PatientState;
   position: GridPosition;
   targetPosition: GridPosition | null;
@@ -95,9 +104,9 @@ export interface GameState {
   rooms: Room[];
   staff: Staff[];
   patients: Patient[];
+  notifications: Notification[];
   selectedTool: ToolType;
   buildingType: RoomType | null;
-  hiringType: StaffType | null;
   selectedId: string | null;
   paused: boolean;
   gameSpeed: 1 | 2 | 3;
@@ -105,6 +114,8 @@ export interface GameState {
   patientsDied: number;
   gameOver: boolean;
   won: boolean;
+  lastPatientSpawn: number;
+  lastSalaryTick: number;
 }
 
 // Notification

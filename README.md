@@ -1,20 +1,23 @@
-# Hopper
+# Bedlam
 
-A browser-based Frogger remake. Because sometimes you just need to help a frog cross the road.
+Browser-based hospital management in the spirit of Theme Hospital. Build rooms. Hire staff. Try not to kill anyone.
 
 ## Why This Exists
 
-Every developer has a moment where they think "I could rebuild that arcade game from my childhood in a weekend." Most of us are wrong. But Frogger? Frogger is actually doable.
+Theme Hospital was a masterpiece of 90s game design. Silly diseases. Stressed doctors. Patients dying in waiting rooms because you forgot to build a second pharmacy.
 
-No game engine. No physics library. No 47 npm packages that each do one thing. Just Canvas, some rectangles pretending to be frogs, and the eternal struggle of timing your jump between two trucks.
+This is my attempt to capture that chaos in a browser. No Unity. No game engine. Just Canvas, some isometric tiles, and the eternal struggle of keeping everyone alive long enough to pay their treatment bills.
 
 ## Features
 
-- Classic Frogger gameplay (cross road, ride logs, don't die)
-- 5 homes to fill per level
-- Difficulty scaling that actually works (traffic gets faster, time gets shorter)
-- High score persistence (your shame is saved locally)
-- Pause functionality (for when your boss walks by)
+- Isometric hospital building (it's not 3D but it'll fool your brain)
+- 4 room types: Reception, GP's Office, Pharmacy, Deflation Room
+- 3 staff types: Doctors, Nurses, Receptionists
+- 3 silly diseases: Bloaty Head, Slack Tongue, Invisibility
+- Patient AI that gets increasingly impatient
+- Treatment success rates based on staff skill
+- Economy that will bankrupt you if you're not careful
+- Win by curing 20 patients. Lose by running out of money.
 
 ## Quick Start
 
@@ -23,41 +26,50 @@ npm install
 npm run dev
 ```
 
-Open http://localhost:3000 and try not to get hit by traffic.
+Open http://localhost:3000 and start building your hospital empire.
 
 ## Controls
 
 | Key | Action |
 |-----|--------|
-| Arrow keys / WASD | Hop |
-| Space | Start / Restart |
-| P | Pause |
+| 1-4 | Select room type |
+| Space | Pause/unpause |
+| +/- | Game speed |
+| ESC | Cancel action |
+| Click | Place room / Select staff |
+| Right-click | Cancel |
 
-## Gameplay
+## Gameplay Loop
 
-1. Start at the bottom
-2. Cross the road - cars and trucks don't stop for frogs
-3. Cross the river - hop on logs (water is fatal, surprisingly)
-4. Land in a home slot at the top
-5. Fill all 5 homes to advance
+1. Build a Reception (patients need somewhere to check in)
+2. Hire a Receptionist (the desk won't staff itself)
+3. Build a GP's Office (diagnosis happens here)
+4. Hire a Doctor (assign them to the GP's Office)
+5. Build treatment rooms for the diseases you're seeing
+6. Try to cure 20 patients before going bankrupt
 
-Each level speeds up traffic, speeds up logs, and gives you less time. Eventually you will lose. That's the game.
+Patients arrive, wait impatiently, get diagnosed, get treated (hopefully), and leave (hopefully cured). Every death hurts your reputation. Every cure earns money.
 
-## Scoring
+## The Diseases
 
-| Action | Points |
-|--------|--------|
-| Hop forward | +10 |
-| Fill home | +50 |
-| Complete level | +1000 |
-| Time bonus | +10 per second remaining |
+| Disease | Diagnosis | Treatment |
+|---------|-----------|-----------|
+| Bloaty Head | GP only | Deflation Room |
+| Slack Tongue | GP only | Pharmacy |
+| Invisibility | GP + Pharmacy | Pharmacy |
+
+Yes, Invisibility requires a blood test at the Pharmacy to diagnose. Don't ask why. It's medical science.
 
 ## Tech Stack
 
 - Next.js 14 + TypeScript
-- HTML5 Canvas (no game engine)
-- Tailwind CSS for UI chrome
-- 30 tests for the bits that matter
+- HTML5 Canvas (isometric rendering)
+- Tailwind CSS (UI chrome)
+- 65 tests (the bits that matter)
+
+## Architecture
+
+One component per file. One module per concern. The game loop lives in `loop.ts`. Rendering lives in `render.ts`. The UI components are separate. The game state flows through React state. It's clean. Probably.
 
 ## License
 
@@ -69,4 +81,4 @@ Katie
 
 ---
 
-*No frogs were harmed in the making of this game. Several rectangles, however, met unfortunate ends.*
+*No patients were harmed in the making of this game. Several virtual ones, however, met unfortunate ends due to understaffing.*

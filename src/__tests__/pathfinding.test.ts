@@ -14,7 +14,7 @@ describe('Pathfinding', () => {
       expect(isWalkable({ x: 0, y: 20 }, [])).toBe(false);
     });
 
-    it('returns false for tiles inside a room', () => {
+    it('returns false for tiles inside a room when not allowed', () => {
       const room: Room = {
         id: 'test',
         type: 'gp_office' as RoomType,
@@ -56,14 +56,13 @@ describe('Pathfinding', () => {
         state: 'empty',
       };
 
-      // Path should go around the room
-      const path = findPath({ x: 4, y: 5 }, { x: 9, y: 5 }, [room]);
+      const path = findPath({ x: 4, y: 5 }, { x: 9, y: 5 }, [room], false);
       expect(path.length).toBeGreaterThan(0);
       expect(path[0]).toEqual({ x: 4, y: 5 });
       expect(path[path.length - 1]).toEqual({ x: 9, y: 5 });
     });
 
-    it('returns empty array when goal is unreachable', () => {
+    it('returns empty array when completely blocked', () => {
       const rooms: Room[] = [
         {
           id: 'block',
@@ -80,10 +79,16 @@ describe('Pathfinding', () => {
       const path = findPath({ x: 0, y: 0 }, { x: 10, y: 10 }, rooms, false);
       expect(path).toEqual([]);
     });
+
+    it('finds shortest path', () => {
+      const path = findPath({ x: 0, y: 0 }, { x: 2, y: 2 }, []);
+      // Shortest path should be 4 moves (Manhattan distance)
+      expect(path.length).toBe(5); // Including start position
+    });
   });
 
   describe('findRoomEntrance', () => {
-    it('returns bottom-left corner of room', () => {
+    it('returns position outside bottom of room', () => {
       const room: Room = {
         id: 'test',
         type: 'gp_office' as RoomType,
@@ -96,7 +101,7 @@ describe('Pathfinding', () => {
       };
 
       const entrance = findRoomEntrance(room);
-      expect(entrance).toEqual({ x: 5, y: 7 });
+      expect(entrance).toEqual({ x: 5, y: 8 });
     });
   });
 
@@ -116,8 +121,7 @@ describe('Pathfinding', () => {
       const path = findPathToRoom({ x: 5, y: 5 }, room, [room]);
       expect(path.length).toBeGreaterThan(0);
       expect(path[0]).toEqual({ x: 5, y: 5 });
-      // Should end at room entrance
-      expect(path[path.length - 1]).toEqual({ x: 10, y: 12 });
+      expect(path[path.length - 1]).toEqual({ x: 10, y: 13 });
     });
   });
 });

@@ -1,31 +1,38 @@
-import { RoomType, RoomDefinition, StaffType, StaffDefinition, Disease, DiseaseType } from './types';
+import { RoomType, RoomDefinition, StaffType, StaffDefinition, DiseaseType, Disease } from './types';
 
 // Canvas and grid
-export const CANVAS_WIDTH = 1024;
-export const CANVAS_HEIGHT = 768;
+export const CANVAS_WIDTH = 800;
+export const CANVAS_HEIGHT = 600;
 export const TILE_WIDTH = 64;
 export const TILE_HEIGHT = 32;
 export const GRID_SIZE = 20;
+export const Y_OFFSET = 50;
+
+// Starting resources
+export const STARTING_CASH = 10000;
+export const STARTING_REPUTATION = 50;
+
+// Win condition
+export const WIN_CONDITION = 20;
+
+// Timing
+export const SIMULATION_TICK_MS = 100;
+export const SALARY_INTERVAL_TICKS = 300;
+export const PATIENT_SPAWN_INTERVAL_MS = 5000;
+export const MAX_PATIENTS = 10;
 
 // Colors
 export const COLORS = {
-  grass: '#4a7c59',
-  gridLine: '#3d6b4a',
-  highlight: 'rgba(255, 255, 0, 0.3)',
-  invalidPlacement: 'rgba(255, 0, 0, 0.3)',
+  grass: '#2d5a27',
+  gridLine: '#1a3d15',
+  highlight: '#4a8a42',
   validPlacement: 'rgba(0, 255, 0, 0.3)',
-  patient: '#e8846b',
-  patientSick: '#cf6b8a',
-  patientCured: '#6bcf9e',
+  invalidPlacement: 'rgba(255, 0, 0, 0.3)',
+  patient: '#e8c547',
+  patientSick: '#d44',
+  patientCured: '#4d4',
+  background: '#1a1a2e',
 };
-
-// Game settings
-export const STARTING_CASH = 10000;
-export const STARTING_REPUTATION = 50;
-export const WIN_CONDITION = 20; // patients cured
-export const PATIENT_SPAWN_INTERVAL = 5000; // ms
-export const SIMULATION_TICK_MS = 100;
-export const SALARY_INTERVAL_TICKS = 300; // ~30 seconds
 
 // Room definitions
 export const ROOM_DEFS: Record<RoomType, RoomDefinition> = {
@@ -35,7 +42,7 @@ export const ROOM_DEFS: Record<RoomType, RoomDefinition> = {
     minSize: { width: 2, height: 2 },
     requiredStaff: 'receptionist',
     capacity: 1,
-    color: '#8b7355',
+    color: '#6b5b95',
   },
   gp_office: {
     name: "GP's Office",
@@ -43,7 +50,7 @@ export const ROOM_DEFS: Record<RoomType, RoomDefinition> = {
     minSize: { width: 3, height: 3 },
     requiredStaff: 'doctor',
     capacity: 1,
-    color: '#6b8e8e',
+    color: '#88b04b',
   },
   pharmacy: {
     name: 'Pharmacy',
@@ -51,7 +58,7 @@ export const ROOM_DEFS: Record<RoomType, RoomDefinition> = {
     minSize: { width: 3, height: 3 },
     requiredStaff: 'nurse',
     capacity: 1,
-    color: '#8e6b8e',
+    color: '#f7cac9',
   },
   deflation: {
     name: 'Deflation Room',
@@ -59,7 +66,7 @@ export const ROOM_DEFS: Record<RoomType, RoomDefinition> = {
     minSize: { width: 4, height: 3 },
     requiredStaff: 'doctor',
     capacity: 1,
-    color: '#8e8e6b',
+    color: '#92a8d1',
   },
 };
 
@@ -68,19 +75,19 @@ export const STAFF_DEFS: Record<StaffType, StaffDefinition> = {
   doctor: {
     name: 'Doctor',
     hireCost: 500,
-    salary: 200,
-    color: '#4a90d9',
+    salary: 100,
+    color: '#3498db',
   },
   nurse: {
     name: 'Nurse',
     hireCost: 300,
-    salary: 150,
-    color: '#d94a7b',
+    salary: 60,
+    color: '#e91e63',
   },
   receptionist: {
     name: 'Receptionist',
     hireCost: 200,
-    salary: 100,
+    salary: 40,
     color: '#9b59b6',
   },
 };
@@ -113,5 +120,12 @@ export const DISEASES: Record<DiseaseType, Disease> = {
   },
 };
 
-// Get all disease types for random selection
-export const DISEASE_TYPES: DiseaseType[] = ['bloaty_head', 'slack_tongue', 'invisibility'];
+// Staff name generator
+const FIRST_NAMES = ['James', 'Mary', 'John', 'Sarah', 'Michael', 'Emma', 'David', 'Lisa', 'Robert', 'Anna'];
+const LAST_NAMES = ['Smith', 'Jones', 'Brown', 'Wilson', 'Taylor', 'Clark', 'White', 'Hall', 'Young', 'King'];
+
+export function generateStaffName(): string {
+  const first = FIRST_NAMES[Math.floor(Math.random() * FIRST_NAMES.length)];
+  const last = LAST_NAMES[Math.floor(Math.random() * LAST_NAMES.length)];
+  return `${first} ${last}`;
+}

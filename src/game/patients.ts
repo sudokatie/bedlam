@@ -1,41 +1,36 @@
-import { Patient, GameState, GridPosition, DiseaseType } from './types';
-import { DISEASE_TYPES, DISEASES, GRID_SIZE, PATIENT_SPAWN_INTERVAL } from './constants';
+import { GameState, Patient, DiseaseType, GridPosition } from './types';
+import { DISEASES, MAX_PATIENTS, PATIENT_SPAWN_INTERVAL_MS, GRID_SIZE } from './constants';
 import { generateId } from './state';
-import { findPath } from './pathfinding';
+import { findPath, findRoomEntrance } from './pathfinding';
+import { findAvailableRoom, getRoomById } from './rooms';
+import { gridEquals } from './isometric';
 
-/**
- * Spawn a new patient at a random edge of the map
- */
-export function spawnPatient(state: GameState): Patient | null {
-  // Pick a random edge and position
+const DISEASE_TYPES: DiseaseType[] = ['bloaty_head', 'slack_tongue', 'invisibility'];
+
+function randomEdgePosition(): GridPosition {
   const edge = Math.floor(Math.random() * 4);
-  let position: GridPosition;
+  const pos = Math.floor(Math.random() * GRID_SIZE);
   
   switch (edge) {
-    case 0: // Top edge
-      position = { x: Math.floor(Math.random() * GRID_SIZE), y: 0 };
-      break;
-    case 1: // Right edge
-      position = { x: GRID_SIZE - 1, y: Math.floor(Math.random() * GRID_SIZE) };
-      break;
-    case 2: // Bottom edge
-      position = { x: Math.floor(Math.random() * GRID_SIZE), y: GRID_SIZE - 1 };
-      break;
-    default: // Left edge
-      position = { x: 0, y: Math.floor(Math.random() * GRID_SIZE) };
-      break;
+    case 0: return { x: 0, y: pos };           // Left
+    case 1: return { x: GRID_SIZE - 1, y: pos }; // Right
+    case 2: return { x: pos, y: 0 };           // Top
+    case 3: return { x: pos, y: GRID_SIZE - 1 }; // Bottom
+    default: return { x: 0, y: 0 };
   }
-  
-  // Pick a random disease
-  const diseaseType = DISEASE_TYPES[Math.floor(Math.random() * DISEASE_TYPES.length)];
+}
+
+export function spawnPatient(state: GameState): GameState {
+  const disease = DISEASE_TYPES[Math.floor(Math.random() * DISEASE_TYPES.length)];
   
   const patient: Patient = {
-    id: generateId(),
-    disease: diseaseType,
+    id: generateId('patient'),
+    disease,
     diagnosed: false,
     diagnosisProgress: 0,
+    diagnosisChainIndex: 0,
     state: 'arriving',
-    position,
+    position: randomEdgePosition(),
     targetPosition: null,
     path: [],
     patience: 100,
@@ -43,254 +38,290 @@ export function spawnPatient(state: GameState): Patient | null {
     targetRoomId: null,
   };
   
-  state.patients.push(patient);
-  return patient;
-}
-
-/**
- * Find a reception room that has a receptionist and is not occupied
- */
-export function findAvailableReception(state: GameState): string | null {
-  for (const room of state.rooms) {
-    if (room.type === 'reception' && room.staffId && room.patientId === null) {
-      return room.id;
-    }
-  }
-  return null;
-}
-
-/**
- * Find a GP office that has a doctor and is not occupied
- */
-export function findAvailableGP(state: GameState): string | null {
-  for (const room of state.rooms) {
-    if (room.type === 'gp_office' && room.staffId && room.patientId === null) {
-      return room.id;
-    }
-  }
-  return null;
-}
-
-/**
- * Find treatment room for a disease that has staff and is not occupied
- */
-export function findAvailableTreatmentRoom(state: GameState, diseaseType: DiseaseType): string | null {
-  const disease = DISEASES[diseaseType];
-  const treatmentType = disease.treatmentRoom;
-  
-  for (const room of state.rooms) {
-    if (room.type === treatmentType && room.staffId && room.patientId === null) {
-      return room.id;
-    }
-  }
-  return null;
-}
-
-/**
- * Get the entrance position for a room (center of the room's bottom edge)
- */
-export function getRoomEntrance(state: GameState, roomId: string): GridPosition | null {
-  const room = state.rooms.find(r => r.id === roomId);
-  if (!room) return null;
-  
   return {
-    x: room.position.x + Math.floor(room.width / 2),
-    y: room.position.y + room.height,
+    ...state,
+    patients: [...state.patients, patient],
   };
 }
 
-/**
- * Send patient to a specific room
- */
-export function sendPatientToRoom(state: GameState, patient: Patient, roomId: string): boolean {
-  const entrance = getRoomEntrance(state, roomId);
-  if (!entrance) return false;
+export function checkPatientSpawn(state: GameState, currentTime: number): GameState {
+  // Don't spawn if paused
+  if (state.paused) return state;
   
-  const path = findPath(patient.position, entrance, state.rooms);
-  if (path.length === 0 && (patient.position.x !== entrance.x || patient.position.y !== entrance.y)) {
-    return false; // No path found
-  }
+  // Don't spawn without reception
+  const hasReception = state.rooms.some(r => r.type === 'reception' && r.staffId !== null);
+  if (!hasReception) return state;
   
-  patient.targetRoomId = roomId;
-  patient.targetPosition = entrance;
-  patient.path = path;
+  // Don't spawn if at max patients
+  if (state.patients.length >= MAX_PATIENTS) return state;
   
-  return true;
+  // Check spawn interval
+  if (currentTime - state.lastPatientSpawn < PATIENT_SPAWN_INTERVAL_MS) return state;
+  
+  return {
+    ...spawnPatient(state),
+    lastPatientSpawn: currentTime,
+  };
 }
 
-/**
- * Update a single patient
- */
-export function updatePatient(state: GameState, patient: Patient): void {
+export function updatePatients(state: GameState): GameState {
+  let newState = state;
+  
+  for (const patient of state.patients) {
+    newState = updatePatient(newState, patient.id);
+  }
+  
+  // Remove dead or cured patients that have left
+  newState = {
+    ...newState,
+    patients: newState.patients.filter(p => 
+      p.state !== 'dead' && 
+      (p.state !== 'leaving' || p.path.length > 0)
+    ),
+  };
+  
+  return newState;
+}
+
+function updatePatient(state: GameState, patientId: string): GameState {
+  const patient = state.patients.find(p => p.id === patientId);
+  if (!patient) return state;
+  
   switch (patient.state) {
     case 'arriving':
-      // Patient just spawned, need to find reception
-      const receptionId = findAvailableReception(state);
-      if (receptionId) {
-        if (sendPatientToRoom(state, patient, receptionId)) {
-          patient.state = 'waiting';
-        }
-      }
-      // If no reception, patient waits (patience decreases)
-      break;
-      
+      return handleArriving(state, patient);
     case 'waiting':
-      // Patient is walking to a room or waiting in queue
-      if (patient.path.length > 0) {
-        // Move along path
-        const nextPos = patient.path.shift()!;
-        patient.position = nextPos;
-      } else if (patient.targetRoomId) {
-        // Arrived at room - check in
-        const room = state.rooms.find(r => r.id === patient.targetRoomId);
-        if (room && room.patientId === null) {
-          room.patientId = patient.id;
-          if (room.type === 'gp_office') {
-            patient.state = 'in_gp';
-          } else if (room.type === 'reception') {
-            // Checked in at reception, now find GP
-            const gpId = findAvailableGP(state);
-            if (gpId) {
-              room.patientId = null; // Leave reception
-              if (sendPatientToRoom(state, patient, gpId)) {
-                patient.state = 'waiting';
-              }
-            }
-          } else {
-            patient.state = 'in_treatment';
-          }
-        }
-      }
-      break;
-      
+      return handleWaiting(state, patient);
     case 'in_gp':
-      // Being diagnosed
-      patient.diagnosisProgress += 5;
-      if (patient.diagnosisProgress >= 100) {
-        patient.diagnosed = true;
-        // Leave GP office
-        const gpRoom = state.rooms.find(r => r.patientId === patient.id);
-        if (gpRoom) {
-          gpRoom.patientId = null;
-        }
-        // Find treatment room
-        const treatmentId = findAvailableTreatmentRoom(state, patient.disease);
-        if (treatmentId) {
-          if (sendPatientToRoom(state, patient, treatmentId)) {
-            patient.state = 'waiting';
-          }
-        } else {
-          // No treatment room available, patient leaves angry
-          patient.state = 'leaving';
-        }
-      }
-      break;
-      
+    case 'in_diagnosis':
     case 'in_treatment':
-      // Being treated - this is handled in the treatment system
-      break;
-      
+      // Handled by diagnosis/treatment systems
+      return state;
     case 'leaving':
-      // Patient is walking to exit
-      if (patient.path.length > 0) {
-        const nextPos = patient.path.shift()!;
-        patient.position = nextPos;
-      } else {
-        // At edge - remove patient
-        const idx = state.patients.indexOf(patient);
-        if (idx >= 0) {
-          state.patients.splice(idx, 1);
-        }
-      }
-      break;
-      
-    case 'cured':
-    case 'dead':
-      // Remove from game
-      const idx = state.patients.indexOf(patient);
-      if (idx >= 0) {
-        state.patients.splice(idx, 1);
-      }
-      break;
-  }
-  
-  // Decrease patience over time (except when being treated)
-  if (patient.state === 'waiting' || patient.state === 'arriving') {
-    patient.patience -= 0.1;
-    if (patient.patience <= 0) {
-      // Patient leaves angry
-      leaveAngrily(state, patient);
-    }
+      return handleLeaving(state, patient);
+    default:
+      return state;
   }
 }
 
-/**
- * Make patient leave angrily (affects reputation)
- */
-export function leaveAngrily(state: GameState, patient: Patient): void {
+function handleArriving(state: GameState, patient: Patient): GameState {
+  // Decrement patience while arriving
+  let updatedPatient = decrementPatience(patient);
+  
+  if (updatedPatient.patience <= 0) {
+    return leaveAngrily(state, updatedPatient);
+  }
+  
+  // If no path, find reception
+  if (updatedPatient.path.length === 0 && !updatedPatient.targetRoomId) {
+    const reception = findAvailableRoom(state, 'reception');
+    if (reception) {
+      const entrance = findRoomEntrance(reception);
+      const path = findPath(updatedPatient.position, entrance, state.rooms);
+      if (path.length > 0) {
+        updatedPatient = {
+          ...updatedPatient,
+          path: path.slice(1),
+          targetRoomId: reception.id,
+          targetPosition: entrance,
+        };
+      }
+    }
+  }
+  
+  // Move along path
+  if (updatedPatient.path.length > 0) {
+    const nextPos = updatedPatient.path[0];
+    updatedPatient = {
+      ...updatedPatient,
+      position: nextPos,
+      path: updatedPatient.path.slice(1),
+    };
+    
+    // Check if arrived at reception
+    if (updatedPatient.path.length === 0 && updatedPatient.targetPosition) {
+      if (gridEquals(updatedPatient.position, updatedPatient.targetPosition)) {
+        updatedPatient = {
+          ...updatedPatient,
+          state: 'waiting',
+          targetPosition: null,
+        };
+      }
+    }
+  }
+  
+  return updatePatientInState(state, updatedPatient);
+}
+
+function handleWaiting(state: GameState, patient: Patient): GameState {
+  let updatedPatient = decrementPatience(patient);
+  
+  if (updatedPatient.patience <= 0) {
+    return leaveAngrily(state, updatedPatient);
+  }
+  
+  // If no current target, find next room
+  if (!updatedPatient.targetRoomId || updatedPatient.path.length === 0) {
+    const nextRoom = getNextRoomForPatient(state, updatedPatient);
+    if (nextRoom) {
+      const entrance = findRoomEntrance(nextRoom);
+      const path = findPath(updatedPatient.position, entrance, state.rooms);
+      if (path.length > 0) {
+        updatedPatient = {
+          ...updatedPatient,
+          path: path.slice(1),
+          targetRoomId: nextRoom.id,
+          targetPosition: entrance,
+        };
+      }
+    }
+  }
+  
+  // Move along path
+  if (updatedPatient.path.length > 0) {
+    const nextPos = updatedPatient.path[0];
+    updatedPatient = {
+      ...updatedPatient,
+      position: nextPos,
+      path: updatedPatient.path.slice(1),
+    };
+    
+    // Check if arrived at target room
+    if (updatedPatient.path.length === 0 && updatedPatient.targetRoomId) {
+      const room = getRoomById(state, updatedPatient.targetRoomId);
+      if (room && room.staffId && room.patientId === null) {
+        // Enter the room
+        const newRoomState = room.type === 'gp_office' ? 'in_gp' 
+          : DISEASES[updatedPatient.disease].treatmentRoom === room.type ? 'in_treatment'
+          : 'in_diagnosis';
+        
+        updatedPatient = {
+          ...updatedPatient,
+          state: newRoomState,
+          targetPosition: null,
+        };
+        
+        // Update room to have this patient
+        const updatedRooms = state.rooms.map(r => 
+          r.id === room.id ? { ...r, patientId: updatedPatient.id, state: 'occupied' as const } : r
+        );
+        
+        return {
+          ...updatePatientInState(state, updatedPatient),
+          rooms: updatedRooms,
+        };
+      }
+    }
+  }
+  
+  return updatePatientInState(state, updatedPatient);
+}
+
+function handleLeaving(state: GameState, patient: Patient): GameState {
+  if (patient.path.length === 0) {
+    // Find path to edge
+    const edge = randomEdgePosition();
+    const path = findPath(patient.position, edge, state.rooms);
+    if (path.length > 0) {
+      return updatePatientInState(state, {
+        ...patient,
+        path: path.slice(1),
+        targetPosition: edge,
+      });
+    }
+    // Can't find path, just remove
+    return state;
+  }
+  
+  // Move along path
+  const nextPos = patient.path[0];
+  return updatePatientInState(state, {
+    ...patient,
+    position: nextPos,
+    path: patient.path.slice(1),
+  });
+}
+
+function getNextRoomForPatient(state: GameState, patient: Patient): ReturnType<typeof findAvailableRoom> {
+  const disease = DISEASES[patient.disease];
+  
+  if (!patient.diagnosed) {
+    // Need diagnosis
+    if (patient.diagnosisChainIndex < disease.diagnosisChain.length) {
+      const roomType = disease.diagnosisChain[patient.diagnosisChainIndex];
+      return findAvailableRoom(state, roomType);
+    }
+  } else {
+    // Need treatment
+    return findAvailableRoom(state, disease.treatmentRoom);
+  }
+  
+  return null;
+}
+
+function decrementPatience(patient: Patient): Patient {
+  return {
+    ...patient,
+    patience: Math.max(0, patient.patience - 0.1),
+  };
+}
+
+function leaveAngrily(state: GameState, patient: Patient): GameState {
   // Clear from any room
-  const room = state.rooms.find(r => r.patientId === patient.id);
-  if (room) {
-    room.patientId = null;
+  let updatedRooms = state.rooms;
+  if (patient.targetRoomId) {
+    updatedRooms = state.rooms.map(r => 
+      r.id === patient.targetRoomId ? { ...r, patientId: null, state: 'empty' as const } : r
+    );
   }
   
-  // Set path to nearest edge
-  const edges = [
-    { x: 0, y: patient.position.y },
-    { x: GRID_SIZE - 1, y: patient.position.y },
-    { x: patient.position.x, y: 0 },
-    { x: patient.position.x, y: GRID_SIZE - 1 },
-  ];
+  const updatedPatient: Patient = {
+    ...patient,
+    state: 'leaving',
+    targetRoomId: null,
+    path: [],
+  };
   
-  // Find closest edge
-  let closest = edges[0];
-  let minDist = Math.abs(patient.position.x - closest.x) + Math.abs(patient.position.y - closest.y);
-  for (const edge of edges) {
-    const dist = Math.abs(patient.position.x - edge.x) + Math.abs(patient.position.y - edge.y);
-    if (dist < minDist) {
-      minDist = dist;
-      closest = edge;
-    }
-  }
+  // Reputation hit
+  const newReputation = Math.max(0, state.reputation - 2);
   
-  patient.path = findPath(patient.position, closest, state.rooms);
-  patient.state = 'leaving';
-  state.reputation -= 2;
+  return {
+    ...updatePatientInState(state, updatedPatient),
+    rooms: updatedRooms,
+    reputation: newReputation,
+  };
 }
 
-/**
- * Update all patients
- */
-export function updatePatients(state: GameState): void {
-  // Copy array since we might remove patients during iteration
-  const patients = [...state.patients];
-  for (const patient of patients) {
-    updatePatient(state, patient);
-  }
+export function sendPatientToRoom(state: GameState, patient: Patient, roomId: string): GameState {
+  const room = getRoomById(state, roomId);
+  if (!room) return state;
+  
+  const entrance = findRoomEntrance(room);
+  const path = findPath(patient.position, entrance, state.rooms);
+  
+  return updatePatientInState(state, {
+    ...patient,
+    state: 'waiting',
+    targetRoomId: roomId,
+    targetPosition: entrance,
+    path: path.slice(1),
+  });
 }
 
-/**
- * Patient spawning timer state
- */
-let lastSpawnTime = 0;
-
-/**
- * Check if we should spawn a new patient
- */
-export function checkPatientSpawn(state: GameState, currentTime: number): void {
-  if (currentTime - lastSpawnTime >= PATIENT_SPAWN_INTERVAL) {
-    // Only spawn if we have a reception
-    const hasReception = state.rooms.some(r => r.type === 'reception');
-    if (hasReception && state.patients.length < 10) {
-      spawnPatient(state);
-    }
-    lastSpawnTime = currentTime;
-  }
+export function removePatient(state: GameState, patientId: string): GameState {
+  return {
+    ...state,
+    patients: state.patients.filter(p => p.id !== patientId),
+  };
 }
 
-/**
- * Reset spawn timer (for new game)
- */
-export function resetSpawnTimer(): void {
-  lastSpawnTime = 0;
+function updatePatientInState(state: GameState, patient: Patient): GameState {
+  return {
+    ...state,
+    patients: state.patients.map(p => p.id === patient.id ? patient : p),
+  };
+}
+
+export function getPatientById(state: GameState, patientId: string): Patient | null {
+  return state.patients.find(p => p.id === patientId) || null;
 }

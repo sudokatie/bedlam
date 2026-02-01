@@ -9,11 +9,16 @@ interface PathNode {
   parent: PathNode | null;
 }
 
+// 8-directional movement per spec
 const DIRECTIONS = [
-  { x: 0, y: -1 },  // North
-  { x: 1, y: 0 },   // East
-  { x: 0, y: 1 },   // South
-  { x: -1, y: 0 },  // West
+  { x: 0, y: -1, cost: 1.0 },   // North
+  { x: 1, y: 0, cost: 1.0 },    // East
+  { x: 0, y: 1, cost: 1.0 },    // South
+  { x: -1, y: 0, cost: 1.0 },   // West
+  { x: 1, y: -1, cost: 1.414 }, // NE
+  { x: 1, y: 1, cost: 1.414 },  // SE
+  { x: -1, y: 1, cost: 1.414 }, // SW
+  { x: -1, y: -1, cost: 1.414 }, // NW
 ];
 
 function heuristic(a: GridPosition, b: GridPosition): number {
@@ -114,7 +119,7 @@ export function findPath(
       if (closedSet.has(key)) continue;
       if (!isWalkable(neighborPos, rooms, allowRoomInteriors)) continue;
       
-      const g = current.g + 1;
+      const g = current.g + dir.cost;
       const h = heuristic(neighborPos, goal);
       const f = g + h;
       

@@ -80,10 +80,12 @@ describe('Pathfinding', () => {
       expect(path).toEqual([]);
     });
 
-    it('finds shortest path', () => {
+    it('finds shortest path with 8-directional movement', () => {
       const path = findPath({ x: 0, y: 0 }, { x: 2, y: 2 }, []);
-      // Shortest path should be 4 moves (Manhattan distance)
-      expect(path.length).toBe(5); // Including start position
+      // With 8-directional movement, diagonal path is shortest: (0,0) -> (1,1) -> (2,2)
+      expect(path.length).toBe(3); // Including start position
+      expect(path[0]).toEqual({ x: 0, y: 0 });
+      expect(path[path.length - 1]).toEqual({ x: 2, y: 2 });
     });
   });
 

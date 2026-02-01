@@ -1,0 +1,30 @@
+{
+  "reception": {
+    "name": "Reception",
+    "cost": 500,
+    "minSize": { "width": 2, "height": 2 },
+    "requiredStaff": "receptionist",
+    "capacity": 1
+  },
+  "gp_office": {
+    "name": "GP's Office",
+    "cost": 1000,
+    "minSize": { "width": 3, "height": 3 },
+    "requiredStaff": "doctor",
+    "capacity": 1
+  },
+  "pharmacy": {
+    "name": "Pharmacy",
+    "cost": 1500,
+    "minSize": { "width": 3, "height": 3 },
+    "requiredStaff": "nurse",
+    "capacity": 1
+  },
+  "deflation": {
+    "name": "Deflation Room",
+    "cost": 2000,
+    "minSize": { "width": 4, "height": 3 },
+    "requiredStaff": "doctor",
+    "capacity": 1
+  }
+}

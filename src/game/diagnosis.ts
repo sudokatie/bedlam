@@ -1,5 +1,8 @@
-import { GameState, Patient, Room, Staff } from './types';
+import { GameState, Patient, Room, Staff, Notification } from './types';
 import { DISEASES } from './constants';
+import { generateId } from './state';
+
+const GP_VISIT_FEE = 50;
 
 export function processDiagnosis(
   state: GameState, 
@@ -45,10 +48,26 @@ export function processDiagnosis(
       r.id === room.id ? { ...r, patientId: null, state: 'empty' as const } : r
     );
     
+    // Add $50 GP visit fee income
+    let newCash = state.cash;
+    let notifications = state.notifications;
+    if (room.type === 'gp_office') {
+      newCash = state.cash + GP_VISIT_FEE;
+      const notification: Notification = {
+        id: generateId('notif'),
+        message: `GP visit fee: +$${GP_VISIT_FEE}`,
+        type: 'info',
+        timestamp: Date.now(),
+      };
+      notifications = [...state.notifications, notification];
+    }
+    
     return {
       ...state,
       patients: state.patients.map(p => p.id === patient.id ? updatedPatient : p),
       rooms: updatedRooms,
+      cash: newCash,
+      notifications,
     };
   }
   

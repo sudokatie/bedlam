@@ -1,4 +1,4 @@
-import { GameState, Patient, DiseaseType, GridPosition } from './types';
+import { GameState, Patient, DiseaseType, GridPosition, Notification } from './types';
 import { DISEASES, MAX_PATIENTS, PATIENT_SPAWN_INTERVAL_MS, GRID_SIZE } from './constants';
 import { generateId } from './state';
 import { findPath, findRoomEntrance } from './pathfinding';
@@ -87,18 +87,32 @@ function updatePatient(state: GameState, patientId: string): GameState {
   const patient = state.patients.find(p => p.id === patientId);
   if (!patient) return state;
   
-  switch (patient.state) {
+  // Decrement health for all non-leaving/cured patients
+  if (patient.state !== 'leaving' && patient.state !== 'cured' && patient.state !== 'dead') {
+    const withHealth = decrementHealth(patient);
+    if (withHealth.health <= 0) {
+      return dieFromIllness(state, withHealth);
+    }
+    // Update patient with decremented health before other processing
+    state = updatePatientInState(state, withHealth);
+  }
+  
+  // Re-fetch patient after health update
+  const currentPatient = state.patients.find(p => p.id === patientId);
+  if (!currentPatient) return state;
+  
+  switch (currentPatient.state) {
     case 'arriving':
-      return handleArriving(state, patient);
+      return handleArriving(state, currentPatient);
     case 'waiting':
-      return handleWaiting(state, patient);
+      return handleWaiting(state, currentPatient);
     case 'in_gp':
     case 'in_diagnosis':
     case 'in_treatment':
       // Handled by diagnosis/treatment systems
       return state;
     case 'leaving':
-      return handleLeaving(state, patient);
+      return handleLeaving(state, currentPatient);
     default:
       return state;
   }
@@ -266,6 +280,14 @@ function decrementPatience(patient: Patient): Patient {
   };
 }
 
+function decrementHealth(patient: Patient): Patient {
+  // Health decays slowly over time - sicker patients need treatment faster
+  return {
+    ...patient,
+    health: Math.max(0, patient.health - 0.05),
+  };
+}
+
 function leaveAngrily(state: GameState, patient: Patient): GameState {
   // Clear from any room
   let updatedRooms = state.rooms;
@@ -289,6 +311,36 @@ function leaveAngrily(state: GameState, patient: Patient): GameState {
     ...updatePatientInState(state, updatedPatient),
     rooms: updatedRooms,
     reputation: newReputation,
+  };
+}
+
+function dieFromIllness(state: GameState, patient: Patient): GameState {
+  // Patient died from health reaching 0
+  const reputationLoss = 5;
+  
+  // Clear from any room
+  let updatedRooms = state.rooms;
+  if (patient.targetRoomId) {
+    updatedRooms = state.rooms.map(r => 
+      r.id === patient.targetRoomId ? { ...r, patientId: null, state: 'empty' as const } : r
+    );
+  }
+  
+  // Create notification
+  const notification: Notification = {
+    id: generateId('notif'),
+    message: `Patient died from illness! Reputation -${reputationLoss}`,
+    type: 'error',
+    timestamp: Date.now(),
+  };
+  
+  return {
+    ...state,
+    patients: state.patients.filter(p => p.id !== patient.id),
+    rooms: updatedRooms,
+    patientsDied: state.patientsDied + 1,
+    reputation: Math.max(0, state.reputation - reputationLoss),
+    notifications: [...state.notifications, notification],
   };
 }
 

@@ -38,7 +38,14 @@ function HUD({
       
       <div className="text-white font-mono">
         <span className="text-gray-400 text-sm">Rep:</span>{' '}
-        <span className="text-yellow-400">{reputation}/100</span>
+        <span className="text-yellow-400" title={`${reputation}/100`}>
+          {Array.from({ length: 5 }, (_, i) => {
+            const threshold = (i + 1) * 20;
+            if (reputation >= threshold) return '*';
+            if (reputation >= threshold - 10) return '.';
+            return ' ';
+          }).join('')}
+        </span>
       </div>
       
       <div className="text-white font-mono">

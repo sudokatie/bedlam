@@ -6,7 +6,7 @@ import { createInitialState } from '../game/state';
 import { createGameLoop } from '../game/loop';
 import { handleKeyDown, handleRightClick } from '../game/input';
 import { hireStaff } from '../game/staff';
-import { placeRoom, getRoomAtPosition } from '../game/rooms';
+import { placeRoom, getRoomAtPosition, demolishRoom } from '../game/rooms';
 import { assignStaffToRoom } from '../game/staff';
 import GameCanvas from '../components/GameCanvas';
 import HUD from '../components/HUD';
@@ -17,7 +17,7 @@ import Notifications from '../components/Notifications';
 export default function Home() {
   const [gameState, setGameState] = useState<GameState>(createInitialState);
   const [hoveredTile, setHoveredTile] = useState<GridPosition | null>(null);
-  const [selectedStaffId, setSelectedStaffId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);  // Can be staff, patient, or room ID
   const gameStateRef = useRef<GameState>(gameState);
   const gameLoopRef = useRef<ReturnType<typeof createGameLoop> | null>(null);
 
@@ -45,7 +45,7 @@ export default function Home() {
     const handleKey = (e: KeyboardEvent) => {
       if (e.key === ' ') e.preventDefault();
       setGameState(prev => handleKeyDown(prev, e.key));
-      if (e.key === 'Escape') setSelectedStaffId(null);
+      if (e.key === 'Escape') setSelectedId(null);
     };
 
     window.addEventListener('keydown', handleKey);
@@ -53,30 +53,39 @@ export default function Home() {
   }, []);
 
   const handleCanvasClick = useCallback((gridPos: GridPosition) => {
-    setGameState(prev => {
-      // Build mode
-      if (prev.buildingType) {
-        const newState = placeRoom(prev, prev.buildingType, gridPos);
-        if (newState) {
-          return {
-            ...newState,
-            buildingType: null,
-            selectedTool: 'select',
-          };
-        }
-        return prev;
-      }
-      return prev;
-    });
-
-    // Staff assignment mode (needs current state)
-    if (selectedStaffId) {
+    // Demolish mode
+    if (gameState.selectedTool === 'demolish') {
       const room = getRoomAtPosition(gameState.rooms, gridPos);
       if (room) {
-        const newState = assignStaffToRoom(gameState, selectedStaffId, room.id);
+        const newState = demolishRoom(gameState, room.id);
         if (newState) {
           setGameState(newState);
-          setSelectedStaffId(null);
+        }
+      }
+      return;
+    }
+
+    // Build mode
+    if (gameState.buildingType) {
+      const newState = placeRoom(gameState, gameState.buildingType, gridPos);
+      if (newState) {
+        setGameState({
+          ...newState,
+          buildingType: null,
+          selectedTool: 'select',
+        });
+      }
+      return;
+    }
+
+    // Staff assignment mode - if staff selected, assign to clicked room
+    if (selectedId?.startsWith('staff_')) {
+      const room = getRoomAtPosition(gameState.rooms, gridPos);
+      if (room) {
+        const newState = assignStaffToRoom(gameState, selectedId, room.id);
+        if (newState) {
+          setGameState(newState);
+          setSelectedId(null);
         }
       }
       return;
@@ -85,23 +94,50 @@ export default function Home() {
     // Check if clicked on a staff member
     for (const staff of gameState.staff) {
       if (staff.position.x === gridPos.x && staff.position.y === gridPos.y) {
-        setSelectedStaffId(staff.id);
+        setSelectedId(staff.id);
         return;
       }
     }
-  }, [gameState, selectedStaffId]);
+
+    // Check if clicked on a patient
+    for (const patient of gameState.patients) {
+      if (patient.position.x === gridPos.x && patient.position.y === gridPos.y) {
+        setSelectedId(patient.id);
+        return;
+      }
+    }
+
+    // Check if clicked on a room
+    const room = getRoomAtPosition(gameState.rooms, gridPos);
+    if (room) {
+      setSelectedId(room.id);
+      return;
+    }
+
+    // Clicked on nothing - deselect
+    setSelectedId(null);
+  }, [gameState, selectedId]);
 
   const handleCanvasRightClick = useCallback(() => {
     setGameState(prev => handleRightClick(prev));
-    setSelectedStaffId(null);
+    setSelectedId(null);
   }, []);
 
   const handleBuildSelect = useCallback((type: RoomType) => {
-    setSelectedStaffId(null);
+    setSelectedId(null);
     setGameState(prev => ({
       ...prev,
       buildingType: type,
       selectedTool: 'build',
+    }));
+  }, []);
+
+  const handleDemolishSelect = useCallback(() => {
+    setSelectedId(null);
+    setGameState(prev => ({
+      ...prev,
+      buildingType: null,
+      selectedTool: 'demolish',
     }));
   }, []);
 
@@ -146,14 +182,18 @@ export default function Home() {
         state={gameState}
         onBuildSelect={handleBuildSelect}
         onHireClick={handleHireClick}
-        onSelectTool={() => setGameState(prev => ({ ...prev, selectedTool: 'select', buildingType: null }))}
+        onSelectTool={() => {
+          setSelectedId(null);
+          setGameState(prev => ({ ...prev, selectedTool: 'select', buildingType: null }));
+        }}
+        onDemolishSelect={handleDemolishSelect}
       />
       
       <div className="flex gap-4">
         <GameCanvas
           state={gameState}
           hoveredTile={hoveredTile}
-          selectedId={selectedStaffId}
+          selectedId={selectedId}
           onHoverChange={setHoveredTile}
           onClick={handleCanvasClick}
           onRightClick={handleCanvasRightClick}
@@ -161,13 +201,14 @@ export default function Home() {
         
         <InfoPanel
           state={gameState}
-          selectedId={selectedStaffId}
+          selectedId={selectedId}
         />
       </div>
       
       <div className="mt-2 text-gray-500 text-sm">
         {gameState.buildingType && 'Click to place room. '}
-        {selectedStaffId && 'Click a room to assign staff. '}
+        {gameState.selectedTool === 'demolish' && 'Click a room to demolish (50% refund). '}
+        {selectedId?.startsWith('staff_') && 'Click a room to assign staff. '}
         {hoveredTile && `(${hoveredTile.x}, ${hoveredTile.y})`}
         {' | ESC to cancel | Space to pause | 1-4 for rooms'}
       </div>

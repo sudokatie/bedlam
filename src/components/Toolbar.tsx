@@ -10,14 +10,38 @@ interface ToolbarProps {
   onBuildSelect: (type: RoomType) => void;
   onHireClick: (type: StaffType) => void;
   onSelectTool: () => void;
+  onDemolishSelect: () => void;
 }
 
 const ROOM_TYPES: RoomType[] = ['reception', 'gp_office', 'pharmacy', 'deflation'];
 const STAFF_TYPES: StaffType[] = ['receptionist', 'doctor', 'nurse'];
 
-function Toolbar({ state, onBuildSelect, onHireClick }: ToolbarProps) {
+function Toolbar({ state, onBuildSelect, onHireClick, onSelectTool, onDemolishSelect }: ToolbarProps) {
   return (
     <div className="flex gap-4 mb-2">
+      <div className="flex items-center gap-2">
+        <button
+          onClick={onSelectTool}
+          className={`px-3 py-1 rounded text-sm ${
+            state.selectedTool === 'select'
+              ? 'bg-blue-600 text-white'
+              : 'bg-gray-700 text-gray-200 hover:bg-gray-600'
+          }`}
+        >
+          Select
+        </button>
+        <button
+          onClick={onDemolishSelect}
+          className={`px-3 py-1 rounded text-sm ${
+            state.selectedTool === 'demolish'
+              ? 'bg-red-600 text-white'
+              : 'bg-gray-700 text-gray-200 hover:bg-gray-600'
+          }`}
+        >
+          Demolish
+        </button>
+      </div>
+      
       <div className="flex items-center gap-2">
         <span className="text-gray-400 text-sm">Rooms:</span>
         {ROOM_TYPES.map((type) => {

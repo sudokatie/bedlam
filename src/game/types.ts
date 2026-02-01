@@ -80,7 +80,7 @@ export type PatientState =
 
 export interface Patient {
   id: string;
-  disease: DiseaseType;
+  disease: DiseaseType;  // Assigned at spawn, revealed when diagnosed=true
   diagnosed: boolean;
   diagnosisProgress: number;
   diagnosisChainIndex: number;

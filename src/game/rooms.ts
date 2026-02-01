@@ -86,3 +86,24 @@ export function findAvailableRoom(state: GameState, type: RoomType): Room | null
 export function getRoomById(state: GameState, roomId: string): Room | null {
   return state.rooms.find(r => r.id === roomId) || null;
 }
+
+export function canDemolishRoom(room: Room): boolean {
+  // Can't demolish if staff or patient is inside
+  return room.staffId === null && room.patientId === null;
+}
+
+export function demolishRoom(state: GameState, roomId: string): GameState | null {
+  const room = getRoomById(state, roomId);
+  if (!room) return null;
+  if (!canDemolishRoom(room)) return null;
+  
+  // Refund 50% of cost
+  const def = ROOM_DEFS[room.type];
+  const refund = Math.floor(def.cost * 0.5);
+  
+  return {
+    ...state,
+    rooms: state.rooms.filter(r => r.id !== roomId),
+    cash: state.cash + refund,
+  };
+}

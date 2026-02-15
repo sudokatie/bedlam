@@ -8,6 +8,7 @@ import { handleKeyDown, handleRightClick } from '../game/input';
 import { hireStaff } from '../game/staff';
 import { placeRoom, getRoomAtPosition, demolishRoom } from '../game/rooms';
 import { assignStaffToRoom } from '../game/staff';
+import { soundSystem } from '../game/sound';
 import GameCanvas from '../components/GameCanvas';
 import HUD from '../components/HUD';
 import Toolbar from '../components/Toolbar';
@@ -20,6 +21,15 @@ export default function Home() {
   const [selectedId, setSelectedId] = useState<string | null>(null);  // Can be staff, patient, or room ID
   const gameStateRef = useRef<GameState>(gameState);
   const gameLoopRef = useRef<ReturnType<typeof createGameLoop> | null>(null);
+  const prevStateRef = useRef<{
+    patientsCured: number;
+    patientsDied: number;
+    roomCount: number;
+    staffCount: number;
+    patientCount: number;
+    gameOver: boolean;
+    won: boolean;
+  } | null>(null);
 
   // Keep ref in sync with state
   useEffect(() => {
@@ -39,6 +49,59 @@ export default function Home() {
       gameLoopRef.current?.stop();
     };
   }, []);
+
+  // Sound effects based on state changes
+  useEffect(() => {
+    const prev = prevStateRef.current;
+    
+    if (prev) {
+      // Patient cured
+      if (gameState.patientsCured > prev.patientsCured) {
+        soundSystem.play('patientCured');
+        soundSystem.play('cashReceived');
+      }
+      
+      // Patient died
+      if (gameState.patientsDied > prev.patientsDied) {
+        soundSystem.play('patientDeath');
+      }
+      
+      // Room built
+      if (gameState.rooms.length > prev.roomCount) {
+        soundSystem.play('roomBuilt');
+      }
+      
+      // Staff hired
+      if (gameState.staff.length > prev.staffCount) {
+        soundSystem.play('staffHired');
+      }
+      
+      // New patient arrived
+      if (gameState.patients.length > prev.patientCount) {
+        soundSystem.play('patientArriving');
+      }
+      
+      // Game over
+      if (gameState.gameOver && !prev.gameOver) {
+        if (gameState.won) {
+          soundSystem.play('gameWon');
+        } else {
+          soundSystem.play('gameLost');
+        }
+      }
+    }
+    
+    // Update previous state
+    prevStateRef.current = {
+      patientsCured: gameState.patientsCured,
+      patientsDied: gameState.patientsDied,
+      roomCount: gameState.rooms.length,
+      staffCount: gameState.staff.length,
+      patientCount: gameState.patients.length,
+      gameOver: gameState.gameOver,
+      won: gameState.won,
+    };
+  }, [gameState]);
 
   // Handle keyboard input
   useEffect(() => {

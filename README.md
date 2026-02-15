@@ -18,6 +18,7 @@ This is my attempt to capture that chaos in a browser. No Unity. No game engine.
 - Treatment success rates based on staff skill
 - Economy that will bankrupt you if you're not careful
 - Win by curing 20 patients. Lose by running out of money.
+- Retro synthesized sound effects
 
 ## Quick Start
 
@@ -60,12 +61,23 @@ Patients arrive, wait impatiently, get diagnosed, get treated (hopefully), and l
 
 Yes, Invisibility requires a blood test at the Pharmacy to diagnose. Don't ask why. It's medical science.
 
+## Sound Effects
+
+Web Audio API synthesized sounds for that retro feel:
+- Patient cured (victory arpeggio)
+- Patient death (sad descending tone)
+- Room built (construction thud)
+- Staff hired (pleasant chime)
+- Patient arriving (door bell)
+- Cash received (coin sound)
+- Game won/lost (fanfares)
+
 ## Tech Stack
 
 - Next.js 14 + TypeScript
 - HTML5 Canvas (isometric rendering)
 - Tailwind CSS (UI chrome)
-- 65 tests (the bits that matter)
+- 78 tests (the bits that matter)
 
 ## Architecture
 

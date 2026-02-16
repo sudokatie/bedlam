@@ -19,6 +19,7 @@ This is my attempt to capture that chaos in a browser. No Unity. No game engine.
 - Economy that will bankrupt you if you're not careful
 - Win by curing 20 patients. Lose by running out of money.
 - Retro synthesized sound effects
+- Local leaderboard tracks your best hospitals
 
 ## Quick Start
 

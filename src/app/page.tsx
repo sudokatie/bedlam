@@ -14,6 +14,7 @@ import HUD from '../components/HUD';
 import Toolbar from '../components/Toolbar';
 import InfoPanel from '../components/InfoPanel';
 import Notifications from '../components/Notifications';
+import VirtualControls from '../components/VirtualControls';
 
 export default function Home() {
   const [gameState, setGameState] = useState<GameState>(createInitialState);
@@ -226,6 +227,15 @@ export default function Home() {
     }));
   }, []);
 
+  const handleCancel = useCallback(() => {
+    setGameState(prev => ({
+      ...prev,
+      buildingType: null,
+      selectedTool: 'select',
+    }));
+    setSelectedId(null);
+  }, []);
+
   return (
     <main className="min-h-screen bg-gray-900 flex flex-col items-center justify-center p-4">
       <h1 className="text-3xl font-bold text-white mb-2">Bedlam</h1>
@@ -301,6 +311,15 @@ export default function Home() {
           </div>
         </div>
       )}
+
+      <VirtualControls
+        paused={gameState.paused}
+        gameSpeed={gameState.gameSpeed}
+        onPause={handlePauseToggle}
+        onSpeedUp={() => handleSpeedChange(Math.min(3, gameState.gameSpeed + 1) as 1 | 2 | 3)}
+        onSpeedDown={() => handleSpeedChange(Math.max(1, gameState.gameSpeed - 1) as 1 | 2 | 3)}
+        onCancel={handleCancel}
+      />
     </main>
   );
 }

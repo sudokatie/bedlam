@@ -25,3 +25,36 @@ body {
     text-wrap: balance;
   }
 }
+
+/* Responsive game layout */
+@media (max-width: 768px) {
+  /* Scale down game UI */
+  main {
+    padding: 0.5rem !important;
+  }
+  
+  /* Make canvas responsive */
+  canvas {
+    max-width: 100%;
+    height: auto !important;
+  }
+  
+  /* Stack toolbar items vertically */
+  .flex.gap-4 {
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+  
+  /* Smaller buttons on mobile */
+  button {
+    font-size: 0.75rem;
+    padding: 0.375rem 0.5rem;
+  }
+  
+  /* Hide info panel on very small screens */
+  @media (max-width: 480px) {
+    .flex.gap-4 > div:last-child {
+      display: none;
+    }
+  }
+}

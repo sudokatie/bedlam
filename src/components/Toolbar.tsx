@@ -5,7 +5,7 @@ import { GameState, RoomType, StaffType } from '../game/types';
 import { ROOM_DEFS, STAFF_DEFS } from '../game/constants';
 import { canHireStaff } from '../game/staff';
 import { Music } from '../game/music';
-import { Sound } from '../game/sound';
+import { soundSystem as Sound } from '../game/sound';
 
 interface ToolbarProps {
   state: GameState;

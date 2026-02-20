@@ -9,6 +9,7 @@ import { hireStaff } from '../game/staff';
 import { placeRoom, getRoomAtPosition, demolishRoom } from '../game/rooms';
 import { assignStaffToRoom } from '../game/staff';
 import { soundSystem } from '../game/sound';
+import { Music } from '../game/music';
 import GameCanvas from '../components/GameCanvas';
 import HUD from '../components/HUD';
 import Toolbar from '../components/Toolbar';
@@ -103,6 +104,17 @@ export default function Home() {
       won: gameState.won,
     };
   }, [gameState]);
+
+  // Switch music track based on game state
+  useEffect(() => {
+    if (gameState.gameOver) {
+      Music.play(gameState.won ? 'victory' : 'gameover');
+    } else if (gameState.paused) {
+      Music.play('menu');
+    } else {
+      Music.play('gameplay');
+    }
+  }, [gameState.gameOver, gameState.won, gameState.paused]);
 
   // Handle keyboard input
   useEffect(() => {
